@@ -77,11 +77,15 @@ const (
 	isInstanceBootEncryption = "encryption"
 	isInstanceBootProfile    = "profile"
 
-	isInstanceVolumeAttachments = "volume_attachments"
-	isInstanceVolumeAttaching   = "attaching"
-	isInstanceVolumeAttached    = "attached"
-	isInstanceVolumeDetaching   = "detaching"
-	isInstanceResourceGroup     = "resource_group"
+	isInstanceVolumeAttachments  = "volume_attachments"
+	isInstanceVolumeAttaching    = "attaching"
+	isInstanceVolumeAttached     = "attached"
+	isInstanceVolumeDetaching    = "detaching"
+	isInstanceResourceGroup      = "resource_group"
+	isInstancePlacementTarget    = "placement_target"
+	isInstanceDedicatedHost      = "dedicated_host"
+	isInstanceDedicatedHostGroup = "dedicated_host_group"
+	isInstanceResourceType       = "resource_type"
 )
 
 func resourceIBMISInstance() *schema.Resource {
@@ -94,9 +98,9 @@ func resourceIBMISInstance() *schema.Resource {
 		Importer: &schema.ResourceImporter{},
 
 		Timeouts: &schema.ResourceTimeout{
-			Create: schema.DefaultTimeout(10 * time.Minute),
-			Delete: schema.DefaultTimeout(10 * time.Minute),
-			Update: schema.DefaultTimeout(10 * time.Minute),
+			Create: schema.DefaultTimeout(60 * time.Minute),
+			Delete: schema.DefaultTimeout(60 * time.Minute),
+			Update: schema.DefaultTimeout(60 * time.Minute),
 		},
 
 		CustomizeDiff: customdiff.Sequence(
@@ -329,6 +333,27 @@ func resourceIBMISInstance() *schema.Resource {
 				Optional:    true,
 				Computed:    true,
 				Description: "Instance resource group",
+			},
+
+			isInstancePlacementTarget: {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Computed:    true,
+				Description: "Instance placement target",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						isInstanceResourceType: {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+						},
+						"id": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+						},
+					},
+				},
 			},
 
 			isInstanceCPU: {
@@ -731,7 +756,31 @@ func instanceCreate(d *schema.ResourceData, meta interface{}, profile, name, vpc
 		instanceproto.ResourceGroup = &vpcv1.ResourceGroupIdentity{
 			ID: &grpstr,
 		}
+	}
 
+	if placetargetintf, ok := d.GetOk(isInstancePlacementTarget); ok {
+
+		log.Println("Inside Create Instance placement")
+		placeTarget := placetargetintf.([]interface{})[0].(map[string]interface{})
+		if placeTarget[isInstanceResourceType] != nil {
+			restype, _ := placeTarget[isInstanceResourceType]
+			restypestr := restype.(string)
+			log.Printf("Resource type string %s", restypestr)
+
+			id, _ := placeTarget["id"]
+			idstr := id.(string)
+			log.Printf("ID string %s", idstr)
+
+			if restypestr == isInstanceDedicatedHost {
+				instanceproto.PlacementTarget = &vpcv1.InstancePlacementPrototypeDedicatedHostIdentityDedicatedHostIdentityByID{
+					ID: &idstr,
+				}
+			} else {
+				instanceproto.PlacementTarget = &vpcv1.InstancePlacementPrototypeDedicatedHostGroupIdentityDedicatedHostGroupIdentityByID{
+					ID: &idstr,
+				}
+			}
+		}
 	}
 
 	options := &vpcv1.CreateInstanceOptions{
@@ -890,12 +939,12 @@ func classicInstanceGet(d *schema.ResourceData, meta interface{}, id string) err
 		ID: &id,
 	}
 	instance, response, err := instanceC.GetInstance(getinsOptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			d.SetId("")
-			return nil
-		}
+	if err != nil && response.StatusCode != 404 {
 		return fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
+	}
+	if response.StatusCode == 404 {
+		d.SetId("")
+		return nil
 	}
 	d.Set(isInstanceName, *instance.Name)
 	if instance.Profile != nil {
@@ -1069,12 +1118,12 @@ func instanceGet(d *schema.ResourceData, meta interface{}, id string) error {
 		ID: &id,
 	}
 	instance, response, err := instanceC.GetInstance(getinsOptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			d.SetId("")
-			return nil
-		}
+	if err != nil && response.StatusCode != 404 {
 		return fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
+	}
+	if response.StatusCode == 404 {
+		d.SetId("")
+		return nil
 	}
 	d.Set(isInstanceName, *instance.Name)
 	if instance.Profile != nil {
@@ -1236,6 +1285,21 @@ func instanceGet(d *schema.ResourceData, meta interface{}, id string) error {
 		d.Set(isInstanceResourceGroup, *instance.ResourceGroup.ID)
 		d.Set(ResourceGroupName, *instance.ResourceGroup.Name)
 	}
+	if instance.PlacementTarget != nil {
+		log.Println("Inside Get Instance placement")
+
+		placeTargetList := make([]map[string]interface{}, 0)
+		placeTarget := map[string]interface{}{}
+		if instance.PlacementTarget != nil {
+			instanceProtoIntf := instance.PlacementTarget
+			placement := instanceProtoIntf.(*vpcv1.InstancePlacement)
+			placeTarget["id"] = *placement.ID
+			placeTarget[isInstanceResourceType] = *placement.ResourceType
+		}
+		placeTargetList = append(placeTargetList, placeTarget)
+		d.Set(isInstancePlacementTarget, placeTargetList)
+	}
+
 	return nil
 }
 
@@ -1285,7 +1349,7 @@ func classicInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 					if *vol.Volume.ID == remove[i] {
 						delvolattoptions := &vpcclassicv1.DeleteVolumeAttachmentOptions{
 							InstanceID: &id,
-							ID:         vol.ID,
+							ID:         vol.Volume.ID,
 						}
 						response, err := instanceC.DeleteVolumeAttachment(delvolattoptions)
 						if err != nil {
@@ -1360,7 +1424,7 @@ func classicInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	if d.HasChange(isInstanceNetworkInterfaces) && !d.IsNewResource() {
 		nics := d.Get(isInstanceNetworkInterfaces).([]interface{})
-		for i := range nics {
+		for i, _ := range nics {
 			securitygrpKey := fmt.Sprintf("network_interfaces.%d.security_groups", i)
 			// networkNameKey := fmt.Sprintf("network_interfaces.%d.name", i)
 			if d.HasChange(securitygrpKey) {
@@ -1502,7 +1566,7 @@ func instanceUpdate(d *schema.ResourceData, meta interface{}) error {
 					if *vol.Volume.ID == remove[i] {
 						delvolattoptions := &vpcv1.DeleteVolumeAttachmentOptions{
 							InstanceID: &id,
-							ID:         vol.ID,
+							ID:         vol.Volume.ID,
 						}
 						_, err := instanceC.DeleteVolumeAttachment(delvolattoptions)
 						if err != nil {
@@ -1582,7 +1646,7 @@ func instanceUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	if d.HasChange(isInstanceNetworkInterfaces) && !d.IsNewResource() {
 		nics := d.Get(isInstanceNetworkInterfaces).([]interface{})
-		for i := range nics {
+		for i, _ := range nics {
 			securitygrpKey := fmt.Sprintf("network_interfaces.%d.security_groups", i)
 			networkNameKey := fmt.Sprintf("network_interfaces.%d.name", i)
 			if d.HasChange(securitygrpKey) {
@@ -1713,24 +1777,25 @@ func classicInstanceDelete(d *schema.ResourceData, meta interface{}, id string) 
 		ID: &id,
 	}
 	_, response, err := instanceC.GetInstance(getinsOptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			d.SetId("")
-			return nil
-		}
+	if err != nil && response.StatusCode != 404 {
 		return fmt.Errorf("Error Getting Instance (%s): %s\n%s", id, err, response)
 	}
+	if response.StatusCode == 404 {
+		d.SetId("")
+		return nil
+	}
+
 	actiontype := "stop"
 	createinsactoptions := &vpcclassicv1.CreateInstanceActionOptions{
 		InstanceID: &id,
 		Type:       &actiontype,
 	}
 	_, response, err = instanceC.CreateInstanceAction(createinsactoptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			return nil
-		}
+	if err != nil && response.StatusCode != 404 {
 		return fmt.Errorf("Error Creating Instance Action: %s\n%s", err, response)
+	}
+	if response.StatusCode == 404 {
+		return nil
 	}
 	_, err = isWaitForClassicInstanceActionStop(instanceC, d, meta, id)
 	if err != nil {
@@ -1794,24 +1859,25 @@ func instanceDelete(d *schema.ResourceData, meta interface{}, id string) error {
 		ID: &id,
 	}
 	_, response, err := instanceC.GetInstance(getinsOptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			d.SetId("")
-			return nil
-		}
+	if err != nil && response.StatusCode != 404 {
 		return fmt.Errorf("Error Getting Instance (%s): %s\n%s", id, err, response)
 	}
+	if response.StatusCode == 404 {
+		d.SetId("")
+		return nil
+	}
+
 	actiontype := "stop"
 	createinsactoptions := &vpcv1.CreateInstanceActionOptions{
 		InstanceID: &id,
 		Type:       &actiontype,
 	}
 	_, response, err = instanceC.CreateInstanceAction(createinsactoptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			return nil
-		}
+	if err != nil && response.StatusCode != 404 {
 		return fmt.Errorf("Error Creating Instance Action: %s\n%s", err, response)
+	}
+	if response.StatusCode == 404 {
+		return nil
 	}
 	_, err = isWaitForInstanceActionStop(instanceC, d, meta, id)
 	if err != nil {
@@ -1888,40 +1954,40 @@ func resourceIBMisInstanceDelete(d *schema.ResourceData, meta interface{}) error
 	return nil
 }
 
-func classicInstanceExists(d *schema.ResourceData, meta interface{}, id string) (bool, error) {
+func classicInstanceExists(d *schema.ResourceData, meta interface{}, id string) error {
 	instanceC, err := classicVpcClient(meta)
 	if err != nil {
-		return false, err
+		return err
 	}
 	getinsOptions := &vpcclassicv1.GetInstanceOptions{
 		ID: &id,
 	}
 	_, response, err := instanceC.GetInstance(getinsOptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			return false, nil
-		}
-		return false, fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
+	if err != nil && response.StatusCode != 404 {
+		return fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
 	}
-	return true, nil
+	if response.StatusCode == 404 {
+		return nil
+	}
+	return nil
 }
 
-func instanceExists(d *schema.ResourceData, meta interface{}, id string) (bool, error) {
+func instanceExists(d *schema.ResourceData, meta interface{}, id string) error {
 	instanceC, err := vpcClient(meta)
 	if err != nil {
-		return false, err
+		return err
 	}
 	getinsOptions := &vpcv1.GetInstanceOptions{
 		ID: &id,
 	}
 	_, response, err := instanceC.GetInstance(getinsOptions)
-	if err != nil {
-		if response != nil && response.StatusCode == 404 {
-			return false, nil
-		}
-		return false, fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
+	if err != nil && response.StatusCode != 404 {
+		return fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
 	}
-	return true, nil
+	if response.StatusCode == 404 {
+		return nil
+	}
+	return nil
 }
 
 func resourceIBMisInstanceExists(d *schema.ResourceData, meta interface{}) (bool, error) {
@@ -1931,12 +1997,18 @@ func resourceIBMisInstanceExists(d *schema.ResourceData, meta interface{}) (bool
 	}
 	id := d.Id()
 	if userDetails.generation == 1 {
-		exists, err := classicInstanceExists(d, meta, id)
-		return exists, err
+		err := classicInstanceExists(d, meta, id)
+		if err != nil {
+			return false, err
+		}
 	} else {
-		exists, err := instanceExists(d, meta, id)
-		return exists, err
+		err := instanceExists(d, meta, id)
+		if err != nil {
+			return false, err
+		}
 	}
+
+	return true, nil
 }
 
 func isWaitForClassicInstanceDelete(instanceC *vpcclassicv1.VpcClassicV1, d *schema.ResourceData, id string) (interface{}, error) {
@@ -1949,11 +2021,11 @@ func isWaitForClassicInstanceDelete(instanceC *vpcclassicv1.VpcClassicV1, d *sch
 				ID: &id,
 			}
 			instance, response, err := instanceC.GetInstance(getinsoptions)
-			if err != nil {
-				if response != nil && response.StatusCode == 404 {
-					return instance, isInstanceDeleteDone, nil
-				}
+			if err != nil && response.StatusCode != 404 {
 				return nil, "", fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
+			}
+			if response.StatusCode == 404 {
+				return instance, isInstanceDeleteDone, nil
 			}
 			if *instance.Status == isInstanceFailed {
 				return instance, *instance.Status, fmt.Errorf("The  instance %s failed to delete: %v", d.Id(), err)
@@ -1978,11 +2050,11 @@ func isWaitForInstanceDelete(instanceC *vpcv1.VpcV1, d *schema.ResourceData, id 
 				ID: &id,
 			}
 			instance, response, err := instanceC.GetInstance(getinsoptions)
-			if err != nil {
-				if response != nil && response.StatusCode == 404 {
-					return instance, isInstanceDeleteDone, nil
-				}
+			if err != nil && response.StatusCode != 404 {
 				return nil, "", fmt.Errorf("Error Getting Instance: %s\n%s", err, response)
+			}
+			if response.StatusCode == 404 {
+				return instance, isInstanceDeleteDone, nil
 			}
 			if *instance.Status == isInstanceFailed {
 				return instance, *instance.Status, fmt.Errorf("The  instance %s failed to delete: %v", d.Id(), err)
@@ -2126,11 +2198,11 @@ func isWaitForClassicInstanceVolumeDetached(instanceC *vpcclassicv1.VpcClassicV1
 				ID:         &volID,
 			}
 			vol, response, err := instanceC.GetVolumeAttachment(getvolattoptions)
-			if err != nil {
-				if response != nil && response.StatusCode == 404 {
-					return vol, isInstanceDeleteDone, nil
-				}
+			if err != nil && response.StatusCode != 404 {
 				return nil, "", fmt.Errorf("Error Detaching volume: %s\n%s", err, response)
+			}
+			if response.StatusCode == 404 {
+				return vol, isInstanceDeleteDone, nil
 			}
 			if *vol.Status == isInstanceFailed {
 				return vol, *vol.Status, fmt.Errorf("The instance %s failed to detach volume %s: %v", d.Id(), volID, err)
@@ -2156,11 +2228,11 @@ func isWaitForInstanceVolumeDetached(instanceC *vpcv1.VpcV1, d *schema.ResourceD
 				ID:         &volID,
 			}
 			vol, response, err := instanceC.GetVolumeAttachment(getvolattoptions)
-			if err != nil {
-				if response != nil && response.StatusCode == 404 {
-					return vol, isInstanceDeleteDone, nil
-				}
+			if err != nil && response.StatusCode != 404 {
 				return nil, "", fmt.Errorf("Error Detaching: %s\n%s", err, response)
+			}
+			if response.StatusCode == 404 {
+				return vol, isInstanceDeleteDone, nil
 			}
 			if *vol.Status == isInstanceFailed {
 				return vol, *vol.Status, fmt.Errorf("The instance %s failed to detach volume %s: %v", d.Id(), volID, err)
