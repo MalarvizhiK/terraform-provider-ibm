@@ -24,10 +24,6 @@ func dataSourceIBMISDedicatedHostGroups() *schema.Resource {
 		Read: dataSourceIBMISDedicatedHostGroupsRead,
 
 		Schema: map[string]*schema.Schema{
-			"id": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
 			isDedicatedHostGroups: {
 				Type:        schema.TypeList,
 				Computed:    true,
@@ -61,10 +57,9 @@ func dataSourceIBMISDedicatedHostGroups() *schema.Resource {
 							Description: "The date and time that the dedicated host group was created.",
 						},
 						isDedicatedHostGroupHosts: {
-							Type:     schema.TypeSet,
+							Type:     schema.TypeList,
 							Computed: true,
 							Elem:     &schema.Schema{Type: schema.TypeString},
-							Set:      schema.HashString,
 						},
 						isDedicatedHostResourceGrp: {
 							Type:        schema.TypeString,
@@ -112,7 +107,7 @@ func dataSourceIBMISDedicatedHostGroupsRead(d *schema.ResourceData, meta interfa
 				dedhost := instance.DedicatedHosts[i]
 				hostList = append(hostList, string(*dedhost.ID))
 			}
-			grp[isDedicatedHostGroupHosts] = newStringSet(schema.HashString, hostList)
+			grp[isDedicatedHostGroupHosts] = hostList
 		}
 		grp[isDedicatedHostResourceGrp] = *instance.ResourceGroup.ID
 		grp[isDedicatedHostGrpZone] = *instance.Zone.Name
