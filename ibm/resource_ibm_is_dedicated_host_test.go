@@ -14,6 +14,7 @@ import (
 
 func TestAccIBMISDedicatedHost_basic(t *testing.T) {
 	log.Println("Before test case")
+	var instance string
 	hostgroupname := fmt.Sprintf("dedicatedhostgroup%d", acctest.RandIntRange(100, 200))
 	hostname := fmt.Sprintf("dedicatedhost%d", acctest.RandIntRange(100, 200))
 	resource.Test(t, resource.TestCase{
@@ -24,11 +25,11 @@ func TestAccIBMISDedicatedHost_basic(t *testing.T) {
 			{
 				Config: testAccCheckIBMISDedicatedHostConfig(hostgroupname, hostname, ISZoneName),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckIBMISDedicatedHostExists("ibm_is_dedicated_host.host1", hostname),
+					testAccCheckIBMISDedicatedHostExists("ibm_is_dedicated_host.host1", instance),
 					resource.TestCheckResourceAttr(
 						"ibm_is_dedicated_host.host1", "name", hostname),
 					resource.TestCheckResourceAttr(
-						"ibm_is_dedicated_host.host1", "group", hostgroupname),
+						"ibm_is_dedicated_host.host1", "instance_placement_enabled", "false"),
 				),
 			},
 		},
@@ -111,7 +112,7 @@ func testAccCheckIBMISDedicatedHostConfig(hostgroupname, hostname, zonename stri
 		name           = "%s"
 		resource_group = data.ibm_resource_group.rg.id
 		group = ibm_is_dedicated_host_group.group1.id
-		instance_placement_enabled = "true"
+		instance_placement_enabled = "false"
 		profile = "dh2-56x464"
 	} 
 
