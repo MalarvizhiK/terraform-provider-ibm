@@ -35,43 +35,49 @@ func resourceIBMisDedicatedHost() *schema.Resource {
 			hostCRN: {
 				Type:        schema.TypeString,
 				Computed:    true,
+				Optional:    true,
 				Description: "The dedicated host CRN.",
 			},
 			hostHref: {
 				Type:        schema.TypeString,
 				Computed:    true,
+				Optional:    true,
 				Description: "The dedicated host href.",
 			},
 			adminState: {
 				Type:        schema.TypeString,
 				Computed:    true,
+				Optional:    true,
 				Description: "The administrative state of the dedicated host.",
 			},
 			availableMemory: {
 				Type:        schema.TypeInt,
 				Computed:    true,
+				Optional:    true,
 				Description: "The amount of memory in gibibytes that is currently available for instances.",
 			},
 			lifeCycleState: {
 				Type:        schema.TypeString,
 				Computed:    true,
+				Optional:    true,
 				Description: "The lifecycle state of the dedicated host resource.",
 			},
 			availableVCPU: {
 				Type:        schema.TypeInt,
 				Computed:    true,
+				Optional:    true,
 				Description: "The dedicated host group this dedicated host is in.",
+			},
+			dedicatedHostCreatedAt: {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Optional:    true,
+				Description: "The date and time that the dedicated host was created.",
 			},
 			dedicatedHostGroup: {
 				Type:        schema.TypeString,
 				Required:    true,
 				Description: "The dedicated host group.",
-			},
-			dedicatedHostInstances: {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Elem:        &schema.Schema{Type: schema.TypeString},
-				Description: "The dedicated host instances.",
 			},
 			dedicatedHostProfile: {
 				Type:        schema.TypeString,
@@ -138,17 +144,38 @@ func dedicatedHostGet(d *schema.ResourceData, meta interface{}) error {
 		log.Printf("Error getting dedicated hosts:%s", resp)
 		return err
 	}
-	d.Set(hostName, result.Name)
-	d.Set(hostID, result.ID)
-	d.Set(instancePlacementEnabled, result.InstancePlacementEnabled)
-	d.Set(hostCRN, result.Crn)
-	d.Set(hostHref, result.Href)
-	d.Set(adminState, result.AdminState)
-	d.Set(availableMemory, result.AvailableMemory)
-	d.Set(lifeCycleState, result.LifecycleState)
-	d.Set(dedicatedHostGroup, result.Group.Name)
-	d.Set(dedicatedHostProfile, result.Profile.Name)
-	d.Set(dedicatedHostZone, result.Zone.Name)
+	d.Set(hostName, *result.Name)
+	log.Println("dedicated host name:", *result.Name)
+	d.Set(hostID, *result.ID)
+	log.Println("dedicated host id:", *result.ID)
+	d.Set(instancePlacementEnabled, *result.InstancePlacementEnabled)
+	d.Set(hostCRN, *result.Crn)
+	log.Println("dedicated host crn:", *result.Crn)
+	d.Set(hostHref, *result.Href)
+	log.Println("dedicated host href:", *result.Href)
+	d.Set(adminState, *result.AdminState)
+	log.Println("dedicated host admin state:", *result.AdminState)
+	d.Set(availableMemory, *result.AvailableMemory)
+	d.Set(lifeCycleState, *result.LifecycleState)
+	log.Println("dedicated host LifecycleState:", *result.LifecycleState)
+	d.Set(dedicatedHostGroup, *result.Group.ID)
+	log.Println("dedicated host group name:", *result.Group.ID)
+	if result.Profile != nil {
+		d.Set(dedicatedHostProfile, *result.Profile.Name)
+		log.Println("dedicated host profile name:", *result.Profile.Name)
+	}
+	d.Set(dedicatedHostZone, *result.Zone.Name)
+	log.Println("dedicated host zone name:", *result.Zone.Name)
+	if result.ResourceGroup != nil {
+		d.Set(dedicatedHostResourceGroup, *result.ResourceGroup.ID)
+		log.Println("dedicated host rg id:", *result.ResourceGroup.ID)
+	}
+	if result.CreatedAt != nil {
+		d.Set(dedicatedHostCreatedAt, (*result.CreatedAt).String())
+		log.Println("dedicated host created at:", (*result.CreatedAt).String())
+	}
+	d.Set(availableVCPU, result.AvailableVcpu.Count)
+
 	return nil
 }
 
@@ -158,21 +185,31 @@ func dedicatedHostUpdate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 	id := d.Id()
-	name := d.Get(hostName).(string)
-	instancePlacementEnabled := d.Get(instancePlacementEnabled).(bool)
+	if d.HasChange(hostName) || d.HasChange(instancePlacementEnabled) {
+		name := d.Get(hostName).(string)
+		instancePlacementEnabled := d.Get(instancePlacementEnabled).(bool)
 
-	options := sess.NewUpdateDedicatedHostOptions(id)
-	options.SetName(name)
-	options.SetInstancePlacementEnabled(instancePlacementEnabled)
+		options := sess.NewUpdateDedicatedHostOptions(id)
+		options.SetName(name)
+		options.SetInstancePlacementEnabled(instancePlacementEnabled)
 
-	result, resp, err := sess.UpdateDedicatedHost(options)
+		result, resp, err := sess.UpdateDedicatedHost(options)
+		if err != nil {
+			log.Printf("[DEBUG] Update Dedicated host error %s\n%s", err, resp)
+			return err
+		}
+		d.SetId(*result.ID)
+
+		log.Printf("[INFO] dedicate host update : %s", *result.ID)
+	}
+
+	options := sess.NewGetDedicatedHostOptions(id)
+	_, resp, err := sess.GetDedicatedHost(options)
 	if err != nil {
-		log.Printf("[DEBUG] Update Dedicated host error %s\n%s", err, resp)
+		log.Printf("Error getting dedicated hosts:%s", resp)
 		return err
 	}
-	d.SetId(*result.ID)
 
-	log.Printf("[INFO] dedicate host update : %s", *result.ID)
 	return nil
 }
 
