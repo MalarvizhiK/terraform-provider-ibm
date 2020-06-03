@@ -23,9 +23,7 @@ func TestAccIBMISDedicatedHostsDataSource_basic(t *testing.T) {
 				Config: testAccCheckIBMISDedicatedHostsDataSourceConfig(hostgroupname, hostname, ISZoneName),
 				Check: resource.ComposeTestCheckFunc(
 					//resource.TestCheckResourceAttrSet(node, "groups"),
-					resource.TestCheckResourceAttrSet(node, "dedicated_hosts.0.name"),
-					resource.TestCheckResourceAttrSet(node, "dedicated_hosts.0.id"),
-					resource.TestCheckResourceAttrSet(node, "dedicated_hosts.0.crn"),
+					resource.TestCheckResourceAttrSet(node, "dedicated_hosts.#"),
 				),
 			},
 		},
@@ -51,11 +49,11 @@ func testAccCheckIBMISDedicatedHostsDataSourceConfig(hostgroupname, hostname, zo
 		name           = "%s"
 		resource_group = data.ibm_resource_group.rg.id
 		group = ibm_is_dedicated_host_group.group1.id
-		instance_placement_enabled = "true"
+		instance_placement_enabled = "false"
 		profile = "dh2-56x464"
 	}
 	
 	data "ibm_is_dedicated_hosts" "test1" {
-		depends_on = [ibm_is_dedicated_host_group.group1]
-	}`, hostgroupname, hostname, zonename)
+		
+	}`, hostgroupname, zonename, hostname)
 }
