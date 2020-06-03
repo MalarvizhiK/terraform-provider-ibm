@@ -40,6 +40,7 @@ const (
 	dedicatedHostZone              = "zone"
 	dedicatedHostZoneHref          = "href"
 	dedicatedHostZoneName          = "name"
+	dedicatedHostCreatedAt         = "created_at"
 
 	lifecycleStatePending  = "pending"
 	lifecycleStateStable   = "stable"
@@ -132,6 +133,11 @@ func dataSourceIBMisDedicatedHosts() *schema.Resource {
 							Computed:    true,
 							Description: "The dedicated host zone.",
 						},
+						dedicatedHostCreatedAt: {
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "The date and time that the dedicated host was created.",
+						},
 					},
 				},
 			},
@@ -171,11 +177,12 @@ func dataSourceIBMisDedicatedHostRead(d *schema.ResourceData, meta interface{}) 
 			instancePlacementEnabled:   instance.InstancePlacementEnabled,
 			lifeCycleState:             instance.LifecycleState,
 			availableVCPU:              instance.AvailableVcpu.Count,
-			dedicatedHostGroup:         instance.Group.Name,
-			dedicatedHostResourceGroup: instance.ResourceGroup.Name,
+			dedicatedHostGroup:         instance.Group.ID,
+			dedicatedHostResourceGroup: instance.ResourceGroup.ID,
 			dedicatedHostZone:          instance.Zone.Name,
 			dedicatedHostProfile:       instance.Profile.Name,
 			dedicatedHostInstances:     instances,
+			dedicatedHostCreatedAt:     instance.CreatedAt.String(),
 		}
 
 		hosts = append(hosts, host)
