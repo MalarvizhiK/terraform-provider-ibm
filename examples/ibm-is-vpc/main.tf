@@ -341,3 +341,8 @@ resource "ibm_is_dedicated_host" "host1" {
   profile = "dh2-56x464"
 }
 
+data "ibm_is_dedicated_host_groups" "ds_dedicated_host_groups" {
+}
+
+data "ibm_is_dedicated_hosts" "ds_dedicated_hosts" {
+}
