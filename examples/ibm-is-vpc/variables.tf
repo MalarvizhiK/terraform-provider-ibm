@@ -18,3 +18,13 @@ variable "profile" {
   default = "bc1-2x8"
 }
 
+variable "region" {
+  default     = "us-south"
+  description = "The VPC Region that you want your VPC, networks and the virtual server to be provisioned in. To list available regions, run `ibmcloud is regions`."
+}
+
+variable "resource_group" {
+  default     = "Default"
+  description = "The resource group to use. If unspecified, the account's default resource group is used."
+}
+
