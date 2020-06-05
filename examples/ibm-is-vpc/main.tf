@@ -313,3 +313,31 @@ resource "ibm_is_public_gateway" "publicgateway1" {
   vpc  = ibm_is_vpc.vpc1.id
   zone = var.zone1
 }
+
+data "ibm_is_region" "region" {
+  name = var.region
+}
+
+data "ibm_is_zone" "zone" {
+  name = "us-south-1"
+  region = data.ibm_is_region.region.name
+}
+
+data "ibm_resource_group" "rg" {
+  name = var.resource_group
+}
+
+resource "ibm_is_dedicated_host_group" "group1" {
+  name           = "group1"
+  resource_group = data.ibm_resource_group.rg.id
+  zone = data.ibm_is_zone.zone.name
+}
+
+resource "ibm_is_dedicated_host" "host1" {
+  name = "dedicatedhost1"
+  instance_placement_enabled = "false"
+  group = ibm_is_dedicated_host_group.group1.id
+  resource_group = data.ibm_resource_group.rg.id
+  profile = "dh2-56x464"
+}
+
